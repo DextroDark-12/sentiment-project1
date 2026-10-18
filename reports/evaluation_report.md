@@ -117,6 +117,13 @@ Forecast from the latest row (17 Oct 2026, base = close of 16 Oct, 81,500.80):
 - **Many comparisons.** Twelve accuracy figures were examined, so one or two looking decent by chance is expected.
 - **Not done.** No multi-asset model, no heavier models, no ablation comparing sentiment-and-price against price-only features. Without the ablation, we cannot say from this run whether sentiment adds or subtracts anything beyond the price features.
 
+- **Engagement drift.** All posts were collected on one day, so older posts had more time to gather likes and reposts than recent ones. Engagement-based features (total engagement, engagement-weighted sentiment) therefore drift over the sample for reasons unrelated to the market.
+- **Narrow time coverage.** Sentiment comes from three one-hour windows a day, taking the newest posts in each window, so it covers about 12% of each day.
+- **Language and spam.** Only English posts were collected, and promotional posts that mention Bitcoin were not filtered beyond basic rules.
+- **No significance testing.** With about 105 graded days per horizon, differences of a few percentage points in accuracy cannot be distinguished from chance.
+- **Signal construction.** The backtest forecast for the next day is the difference of two noisy model forecasts (h = 1 minus h = 0).
+- **Reproducibility.** Raw posts are not committed. Re-scraping on another date returns different posts and engagement counts. To reproduce the reported numbers exactly, start from the committed `data/processed/daily_sentiment.csv` and run `features.py`, `model.py` and `backtest.py`.
+
 ## 8. Reproducing the results
 
 ```
