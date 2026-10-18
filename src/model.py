@@ -1,3 +1,7 @@
+﻿import os
+from pathlib import Path
+os.chdir(Path(__file__).resolve().parent.parent)
+
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge, LogisticRegression
@@ -17,7 +21,9 @@ def clf():
 # ---------- walk-forward ----------
 records = []
 for h in range(6):
-    yr, yu = f"y_ret_{h}", f"y_up_{h}"
+    yr = f"y_ret_{h}" 
+    yu = f"y_up_{h}"
+
     for i in range(MIN_TRAIN + h, len(df)):
         test = df.iloc[[i]]
         if np.isnan(test[yr].iloc[0]):
@@ -27,9 +33,9 @@ for h in range(6):
 
         pred_ret = reg().fit(X, train[yr]).predict(Xt)[0]
         if train[yu].nunique() == 2:
-            prob_up = clf().fit(X, train[yu]).predict_proba(Xt)[0, 1]
+            prob_up = clf().fit(X, train[yu]).predict_proba(Xt)[0, 1] # [probability of 0 , probability of 1]. 
         else:
-            prob_up = float(train[yu].mean())
+            prob_up = float(train[yu].mean()) # if only 1's or 0's are there then that will be the answer.
 
         cp = test["close_prev"].iloc[0]
         records.append({

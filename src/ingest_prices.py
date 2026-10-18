@@ -1,3 +1,7 @@
+﻿import os
+from pathlib import Path
+os.chdir(Path(__file__).resolve().parent.parent)
+
 import os
 import pandas as pd
 import yfinance as yf

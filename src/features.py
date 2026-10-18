@@ -1,7 +1,11 @@
+﻿import os
+from pathlib import Path
+os.chdir(Path(__file__).resolve().parent.parent)
+
 import numpy as np
 import pandas as pd
 
-prices = pd.read_csv("data/raw/btc_prices.csv")
+prices = pd.read_csv(r"F:\ml_model_webtak\ML-projects\btc-sentiment\data\raw\btc_prices.csv")
 prices["date"] = pd.to_datetime(prices['date'] , utc=True).dt.floor("D")
 prices = prices[["date" , "Close"]].rename(columns={"Close":"close"}).sort_values("date")
 
@@ -9,12 +13,12 @@ today = pd.Timestamp.now(tz="UTC").floor("D")
 prices = prices[prices["date"] < today]
 
 #sent = sentiments
-sent = pd.read_csv(r"F:\ml_model_webtak\ML-projects\data\processed\daily_sentiment.csv")
+sent = pd.read_csv(r"F:\ml_model_webtak\ML-projects\btc-sentiment\data\processed\daily_sentiment.csv")
 sent["date"] = pd.to_datetime(sent["date"] , utc=True).dt.floor("D")
 
 #making the final dataframe with sentiments and the prices.
 df = prices.merge(sent , on="date" , how="left").reset_index(drop=True)
-
+df = df[(df["date"] >= sent["date"].min()) & (df["date"] <= sent["date"].max())].reset_index(drop=True)
 
 #just if the dataframe doesnt have any of this value then tirn them to 0.
 sent_cols = ["mean_sent" , "sent_std" , "wsent_followers" , "wsent_engage",
@@ -138,5 +142,6 @@ with open("data/processed/feature_cols.txt", "w") as f:
 print(df.shape)
 print(df[["date", "close", "mean_sent", "post_count", "y_ret_0", "y_ret_5"]].tail(8))
 print("rows with all 6 targets:", df[[f"y_ret_{h}" for h in range(6)]].dropna().shape[0])
+
 
 

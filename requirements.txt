@@ -1,0 +1,9 @@
+pandas
+numpy
+yfinance
+apify-client
+python-dotenv
+vaderSentiment
+scikit-learn
+matplotlib
+tavily-python

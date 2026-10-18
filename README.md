@@ -1,0 +1,151 @@
+# BTC X-Sentiment Price Forecasting
+
+A Python pipeline that forecasts Bitcoin's price at **n+0, n+1, n+2, n+3, n+4 and n+5** (daily bars) using **only X (Twitter) sentiment and price history**, validated out-of-sample with walk-forward validation, plus a long/short strategy backtest (Sharpe, Sortino, Max Drawdown).
+
+Built as an internship assessment (Quantitative Data Scientist).
+
+## Headline result
+
+On 180 days of real data (21 Apr to 17 Oct 2026), **the model did not beat a "no change" forecast, and the strategy built on it lost to buy-and-hold.** This is reported as found, without tuning to improve the numbers. Full details, tables and limitations are in [`reports/evaluation_report.md`](reports/evaluation_report.md).
+
+| | Strategy | Buy and hold |
+|---|---|---|
+| Total return (110 test days) | -22.3% | +35.3% |
+| Sharpe | -2.02 | 2.85 |
+| Sortino | -2.35 | 5.72 |
+| Max drawdown | -27.2% | -7.0% |
+
+Forecast error was 17% to 30% larger than the naive "price stays the same" error at every horizon, and direction accuracy stayed around 50%.
+
+## Status
+
+| Stage | Status |
+|---|---|
+| Price ingestion (yfinance) | Done |
+| X post ingestion via Apify | Done (180 days, sampled) |
+| Sentiment scoring and daily aggregation | Done |
+| Features and targets | Done |
+| Walk-forward models, horizons 0 to 5 | Done |
+| Backtest (Sharpe, Sortino, Max Drawdown) | Done |
+| Charts and one-page sentiment summary | Done |
+| Evaluation report | Done (`reports/evaluation_report.md`) |
+| Multi-asset extension | Not done |
+| Ablation (sentiment+price vs price-only) | Not done |
+
+## What the model predicts
+
+For each day **n** and horizon **h = 0..5**:
+
+- **Regression target** `y_ret_h = ln( close[n+h] / close[n-1] )`
+- **Direction target** `y_up_h = 1` if `y_ret_h > 0`, else `0`
+- Predicted price = `close[n-1] * exp(predicted return)`
+
+**Timing rule (no leakage):** on day n the model may use prices up to the close of day n-1 and the posts of day n. Nothing later.
+
+## Project structure
+
+```
+.
+├── .env.example              # template for API keys (copy to .env)
+├── requirements.txt
+├── src/
+│   ├── ingest_prices.py      # BTC daily prices (yfinance)
+│   ├── ingest_x.py           # Apify scraper (time windows, resume, cost guards)
+│   ├── check_tweets.py       # health check of the scraped file
+│   ├── make_dev_data.py      # synthetic tweets used to debug the pipeline
+│   ├── sentiment.py          # clean tweets, VADER score, daily aggregation
+│   ├── features.py           # join with prices, features and targets
+│   ├── model.py              # walk-forward validation, all horizons
+│   ├── backtest.py           # long/short strategy and risk metrics
+│   ├── plots.py              # charts
+│   ├── summary_generator.py  # one-page sentiment summary
+│   └── test_tavily.py        # Tavily connectivity test
+├── data/
+│   ├── raw/                  # downloaded data (not committed)
+│   ├── dev/                  # synthetic data (not committed)
+│   └── processed/            # computed tables
+└── reports/
+    ├── evaluation_report.md
+    ├── daily_sentiment_summary.md
+    └── figures/
+```
+
+## Setup
+
+```bash
+python -m venv venv
+venv\Scripts\activate             # macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Copy `.env.example` to `.env` and fill in your keys:
+
+```
+APIFY_TOKEN_1=your_apify_token
+TAVILY_API_KEY=your_tavily_key
+```
+
+## How to run
+
+Run every command from the project root (the folder containing `src/`).
+
+```bash
+python src/ingest_prices.py
+python src/ingest_x.py --token-env APIFY_TOKEN_1 --start 2026-04-21 --end 2026-10-17 --out data/raw/tweets_acc1.jsonl --max-tweets 25000
+python src/check_tweets.py                      # optional health check
+copy data\raw\tweets_acc1.jsonl data\raw\tweets.jsonl      # macOS/Linux: cp
+python src/sentiment.py real
+python src/features.py
+python src/model.py
+python src/backtest.py
+python src/plots.py
+python src/summary_generator.py
+```
+
+Each script reads the previous script's output file. `ingest_x.py` is safe to stop and re-run: finished days are remembered. Without the `real` argument, `sentiment.py` reads the synthetic file in `data/dev/`, which is only for debugging.
+
+## Data
+
+- **Prices:** Yahoo Finance via `yfinance` (BTC-USD, daily, UTC).
+- **Posts:** Apify actor `kaitoeasyapi/twitter-x-data-tweet-scraper-pay-per-result-cheapest`. Query `($BTC OR #bitcoin OR bitcoin) lang:en -filter:replies`, latest first.
+- **Sampling:** three one-hour windows per day (00:00, 08:00, 16:00 UTC), not every post. 20,636 rows returned, 10,576 unique, 10,075 after cleaning (about 55 per day), 180 of 180 days covered. The actor returns overlapping pages, so duplicates are dropped by tweet ID.
+- **Cleaning:** drop duplicate IDs, retweets, tweets not mentioning btc/bitcoin, and tweets under 20 characters.
+- Tokens are never committed. Actor ID is listed above and tokens are provided separately to reviewers.
+
+## Pipeline details
+
+**Sentiment (`sentiment.py`).** Each tweet is scored with VADER (compound, -1 to +1). Weights are log(1 + followers) and log(1 + likes + reposts). Daily columns: mean sentiment, spread, follower-weighted and engagement-weighted means, post count, total engagement, share bullish and share bearish.
+
+**Features (19), sentiment and price only (`features.py`).**
+- Price: returns lagged 1, 2, 3, 5 days; 7-day volatility; 7-day mean return.
+- Sentiment: the daily columns above plus day-to-day changes and 3/7-day moving averages.
+
+**Models and validation (`model.py`).**
+- Per horizon: Ridge (alpha 10) for the return and logistic regression (C 0.1) for direction, each after a standard scaler fitted on the training window only.
+- Walk-forward: minimum 60 training days; for every test day a fresh model is trained on past rows only, and for horizon h training stops h days before the test day, because the answers of the most recent rows contain prices from the test period.
+- Baselines: zero return (naive) and the most common direction so far.
+
+**Backtest (`backtest.py`).** After each day's close, take the h = 1 forecast minus the h = 0 forecast as the forecast for the next day. Long if positive, short if negative. Cost 0.1% per unit of position traded (a long-to-short switch trades two units, so costs 0.2%). Annualised with 365 days.
+
+## Leakage controls
+
+- Features are lagged or computed from data available on day n.
+- Targets are built from future prices but are never in the feature list.
+- Training windows stop h days before each test day.
+- Scaling is fitted inside each training window.
+- An assertion in `features.py` checks that the lag column is a true lag.
+- Row counts are printed after each step (this caught an ID-precision bug that silently deleted most of the data during development).
+
+## Known limitations
+
+- Small sample (about 170 daily rows, about 105 graded days per horizon), so metrics are noisy.
+- Sentiment comes from about 55 cleaned posts a day, sampled from three one-hour windows.
+- VADER is a general-English lexicon and can misread crypto slang.
+- Posts of day n partly react to day n's price move, which flatters the n+0 horizon.
+- BTC rose strongly in the test window, which favours buy-and-hold.
+- Backtest ignores slippage and funding costs and trades at the daily close.
+- No ablation, no multi-asset model, no heavier models.
+
+## Development note
+
+While real data was being collected, the pipeline was developed and debugged on synthetic placeholder tweets (`src/make_dev_data.py`). No reported result comes from synthetic data.
